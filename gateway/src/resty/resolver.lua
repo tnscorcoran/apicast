@@ -11,6 +11,9 @@ local insert = table.insert
 local getenv = os.getenv
 local concat = table.concat
 local io_type = io.type
+
+require('resty.core.regex') -- to allow use of ngx.re.match in the init phase
+
 local re_match = ngx.re.match
 local resolver_cache = require 'resty.resolver.cache'
 local dns_client = require 'resty.resolver.dns_client'
@@ -98,10 +101,17 @@ function _M.parse_nameservers(path)
   end
 
   if resolver then
-    local m = re.split(resolver, ':', 'oj')
-    insert(nameservers, nameserver.new(m[1], m[2]))
-    -- we are going to use all resolvers, because we can't trust dnsmasq
-    -- see https://github.com/3scale/apicast/issues/321 for more details
+    local m
+
+    m, err = re_match(resolver, '^(.+?)(?<!:)(?:\\:(\\d+))?$', 'oj')
+
+    if m then
+      -- we are going to use all resolvers, because we can't trust dnsmasq
+      -- see https://github.com/3scale/apicast/issues/321 for more details
+      insert(nameservers, nameserver.new(m[1], m[2]))
+    else
+      ngx.log(ngx.ERR, 'invalid resolver ', resolver, ' error: ', err)
+    end
   end
 
   for server in gmatch(resolv_conf, 'nameserver%s+([^%s]+)') do
